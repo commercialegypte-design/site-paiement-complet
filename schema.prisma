@@ -1,0 +1,111 @@
+// Schéma de base de données Prisma pour Éonite Payment Module
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Quote {
+  id                String      @id @default(cuid())
+  quoteNumber       String      @unique
+  customerEmail     String
+  customerName      String?
+  customerSiret     String?
+  customerPhone     String?
+  companyName       String?
+  
+  // Montants (en centimes)
+  amount            Int         // Ex: 15000 = 150.00€
+  currency          String      @default("EUR")
+  vatRate           Decimal     @default(20.00)
+  vatAmount         Int         // En centimes
+  
+  // Statut
+  status            QuoteStatus @default(PENDING)
+  
+  // Description
+  description       String
+  notes             String?
+  
+  // Mollie
+  mollieOrderId     String?     @unique
+  mollieCheckoutUrl String?
+  molliePaymentMethod String?   // billie, banktransfer, etc.
+  
+  // Adresse (pour Billie B2B)
+  streetAndNumber   String?
+  city              String?
+  region            String?
+  postalCode        String?
+  country           String      @default("FR")
+  
+  // Dates
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+  paidAt            DateTime?
+  expiresAt         DateTime?
+  
+  // Relations
+  items             QuoteItem[]
+  webhookEvents     WebhookEvent[]
+  
+  @@index([quoteNumber])
+  @@index([customerEmail])
+  @@index([status])
+  @@index([mollieOrderId])
+  @@index([createdAt])
+  @@map("quotes")
+}
+
+model QuoteItem {
+  id          String   @id @default(cuid())
+  quoteId     String
+  quote       Quote    @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+  
+  name        String
+  description String?
+  quantity    Int
+  unitPrice   Int      // En centimes
+  totalAmount Int      // En centimes
+  vatRate     Decimal  @default(20.00)
+  vatAmount   Int      // En centimes
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  @@index([quoteId])
+  @@map("quote_items")
+}
+
+model WebhookEvent {
+  id            String   @id @default(cuid())
+  quoteId       String?
+  quote         Quote?   @relation(fields: [quoteId], references: [id], onDelete: SetNull)
+  
+  mollieOrderId String
+  eventType     String   // order.paid, order.failed, etc.
+  status        String
+  payload       Json     // Payload complet de Mollie
+  processed     Boolean  @default(false)
+  
+  createdAt     DateTime @default(now())
+  
+  @@index([quoteId])
+  @@index([mollieOrderId])
+  @@index([processed])
+  @@index([createdAt])
+  @@map("webhook_events")
+}
+
+enum QuoteStatus {
+  PENDING     // En attente de paiement
+  PROCESSING  // Paiement en cours
+  PAID        // Payé
+  FAILED      // Échec
+  CANCELLED   // Annulé
+  EXPIRED     // Expiré
+}
